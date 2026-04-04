@@ -88,7 +88,9 @@ jobs:
         NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
       run: |
         $PSNativeCommandUseErrorActionPreference = $true
-        dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
+        Get-ChildItem ./artifacts/*.nupkg | ForEach-Object {
+          dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
+        }
         git tag v${{ env.PACKAGE_VERSION }}
         git push origin v${{ env.PACKAGE_VERSION }}
 
