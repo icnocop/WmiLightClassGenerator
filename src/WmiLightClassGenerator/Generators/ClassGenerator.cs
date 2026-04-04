@@ -184,7 +184,7 @@ public sealed class ClassGenerator
             {
                 string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
                 WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
-                if (hasAutoJobWait && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
                 {
                     WriteAsyncRefFallback(w, inParam, "this.connection");
                 }
@@ -196,7 +196,7 @@ public sealed class ClassGenerator
         {
             string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
             WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
-            if (hasAutoJobWait && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
             {
                 WriteAsyncRefFallback(w, outParam, "this.connection");
             }
@@ -257,7 +257,7 @@ public sealed class ClassGenerator
             {
                 string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
                 WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
-                if (hasAutoJobWait && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
                 {
                     WriteAsyncRefFallback(w, inParam, "connection");
                 }
@@ -268,7 +268,7 @@ public sealed class ClassGenerator
         {
             string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
             WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
-            if (hasAutoJobWait && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
             {
                 WriteAsyncRefFallback(w, outParam, "connection");
             }
