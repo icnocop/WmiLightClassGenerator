@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- NuGet package configuration -->
+    <IsPackable>true</IsPackable>
+    <PackageId>WmiLightClassGenerator</PackageId>
+    <Description>Generates strongly-typed C# wrapper classes for WMI classes using the WmiLight library.</Description>
+    <Authors>WmiLightClassGenerator Contributors</Authors>
+    <PackageProjectUrl>https://github.com/icnocop/WmiLightClassGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/icnocop/WmiLightClassGenerator</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>wmi;code-generation;wmilight;windows-management-instrumentation</PackageTags>
+
+    <!-- Build-only package: exe goes in tools/, not lib/ -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Management" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Templates\**" />
+    <EmbeddedResource Include="Templates\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pack the exe and dependencies into tools/ -->
+    <None Include="$(OutputPath)\**\*" Pack="true" PackagePath="tools" />
+
+    <!-- Pack .props into build/ and buildTransitive/ for consuming projects -->
+    <None Include="build\WmiLightClassGenerator.props" Pack="true" PackagePath="build" />
+    <None Include="build\WmiLightClassGenerator.props" Pack="true" PackagePath="buildTransitive" />
+
+    <!-- Include README and LICENSE in the package -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Include="..\..\LICENSE.txt" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

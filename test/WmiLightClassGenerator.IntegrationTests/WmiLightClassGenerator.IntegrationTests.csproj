@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MSTest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WmiLightClassGenerator\WmiLightClassGenerator.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <ProjectReference Include="..\..\samples\WmiLightClassGenerator.Sample\WmiLightClassGenerator.Sample.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <Target Name="_CopyGeneratorExe" AfterTargets="Build">
+    <PropertyGroup>
+      <_GeneratorOutputDir>$(MSBuildProjectDirectory)\..\..\src\WmiLightClassGenerator\bin\$(Configuration)\$(TargetFramework)\</_GeneratorOutputDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_GeneratorFiles Include="$(_GeneratorOutputDir)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_GeneratorFiles)" DestinationFolder="$(OutputPath)%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

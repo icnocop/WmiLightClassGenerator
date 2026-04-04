@@ -1,0 +1,123 @@
+namespace {0};
+
+using System;
+using System.Linq;
+using System.Threading;
+using WmiLight;
+
+/// <summary>
+/// Provides utility methods for waiting on WMI asynchronous jobs.
+/// Auto-generated WMI methods that return a job path use this helper
+/// to block until the job completes or fails.
+/// </summary>
+internal static class WmiJobHelper
+{
+    private const uint CompletedWithNoError = 0;
+    private const uint JobStarted = 4096;
+    private const ushort JobStateCompleted = 7;
+    private const ushort JobStateStarting = 3;
+    private const ushort JobStateRunning = 4;
+
+    /// <summary>
+    /// Waits for a WMI job to complete, given the method return value and job path.
+    /// If the return value indicates the operation completed synchronously, returns immediately.
+    /// If a job was started, polls the <c>CIM_ConcreteJob</c> instance until it finishes.
+    /// </summary>
+    /// <param name="connection">The WMI connection to use for polling.</param>
+    /// <param name="returnValue">The return value from the WMI method call.</param>
+    /// <param name="jobPath">The WMI object path of the job.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the job cannot be found.</exception>
+    /// <exception cref="Exception">Thrown when the job fails or the return value indicates an error.</exception>
+    public static void WaitForJob(WmiConnection connection, uint returnValue, string jobPath)
+    {
+        if (returnValue == CompletedWithNoError)
+        {
+            return;
+        }
+
+        if (returnValue != JobStarted)
+        {
+            throw new Exception($"WMI method failed with return value {returnValue} (0x{returnValue:X}).");
+        }
+
+        string instanceId = ExtractInstanceId(jobPath);
+        string query = $"SELECT * FROM CIM_ConcreteJob WHERE InstanceID='{EscapeWql(instanceId)}'";
+
+        using var enumerator = new WmiQuery(connection, query).GetEnumerator();
+        if (!enumerator.MoveNext())
+        {
+            throw new InvalidOperationException($"Job not found: {jobPath}");
+        }
+
+        var job = enumerator.Current;
+        ushort jobState = job.GetPropertyValue<ushort>("JobState");
+
+        while (jobState == JobStateStarting || jobState == JobStateRunning)
+        {
+            Thread.Sleep(1000);
+            job.Dispose();
+
+            using var pollEnumerator = new WmiQuery(connection, query).GetEnumerator();
+            if (!pollEnumerator.MoveNext())
+            {
+                throw new InvalidOperationException($"Job disappeared during polling: {jobPath}");
+            }
+
+            job = pollEnumerator.Current;
+            jobState = job.GetPropertyValue<ushort>("JobState");
+        }
+
+        if (jobState != JobStateCompleted)
+        {
+            ushort errorCode = job.GetPropertyValue<ushort>("ErrorCode");
+            string errorDescription = job.GetPropertyValue<string>("ErrorDescription");
+            string jobName = GetJobStateName(jobState);
+            job.Dispose();
+            throw new Exception(
+                $"WMI job failed.{Environment.NewLine}" +
+                $"Job path: {jobPath}{Environment.NewLine}" +
+                $"Job state: {jobState} ({jobName}){Environment.NewLine}" +
+                $"Error code: {errorCode} (0x{errorCode:X}){Environment.NewLine}" +
+                $"Error description: {errorDescription}");
+        }
+
+        job.Dispose();
+    }
+
+    private static string GetJobStateName(ushort jobState)
+    {
+        return jobState switch
+        {
+            2 => "New",
+            3 => "Starting",
+            4 => "Running",
+            5 => "Suspended",
+            6 => "ShuttingDown",
+            7 => "Completed",
+            8 => "Terminated",
+            9 => "Killed",
+            10 => "Exception",
+            11 => "Service",
+            _ => "Unknown",
+        };
+    }
+
+    private static string ExtractInstanceId(string wmiPath)
+    {
+        const string marker = "InstanceID=\"";
+        int start = wmiPath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return wmiPath;
+        }
+
+        start += marker.Length;
+        int end = wmiPath.IndexOf('"', start);
+        return end > start ? wmiPath.Substring(start, end - start) : wmiPath.Substring(start);
+    }
+
+    private static string EscapeWql(string value)
+    {
+        return value.Replace("'", "\\'");
+    }
+}

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <WmiLightClassGeneratorToolDir>$(MSBuildThisFileDirectory)..\tools\</WmiLightClassGeneratorToolDir>
+    <WmiLightClassGeneratorExe>$(WmiLightClassGeneratorToolDir)WmiLightClassGenerator.exe</WmiLightClassGeneratorExe>
+  </PropertyGroup>
+</Project>

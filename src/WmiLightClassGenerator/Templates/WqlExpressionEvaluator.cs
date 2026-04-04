@@ -1,0 +1,116 @@
+namespace {0};
+
+using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+
+/// <summary>
+/// Pre-evaluates expression subtrees that do not depend on a lambda parameter
+/// into <see cref="ConstantExpression"/> nodes. This resolves captured local
+/// variables before the WQL visitor runs.
+/// </summary>
+internal static class WqlExpressionEvaluator
+{
+    /// <summary>
+    /// Partially evaluates the expression, replacing all subtrees that do not
+    /// reference a parameter with their computed constant values.
+    /// </summary>
+    /// <param name="expression">The expression to evaluate.</param>
+    /// <returns>A simplified expression with captured variables resolved.</returns>
+    public static Expression PartialEval(Expression expression)
+    {
+        if (expression is null)
+        {
+            throw new ArgumentNullException(nameof(expression));
+        }
+
+        var candidates = new CandidateFinder().FindCandidates(expression);
+        return new SubtreeReplacer(candidates).Visit(expression);
+    }
+
+    /// <summary>
+    /// Evaluates a single expression subtree to a constant.
+    /// </summary>
+    private static Expression Evaluate(Expression node)
+    {
+        if (node.NodeType == ExpressionType.Constant)
+        {
+            return node;
+        }
+
+        var lambda = Expression.Lambda(node);
+        var fn = lambda.Compile();
+        return Expression.Constant(fn.DynamicInvoke(null), node.Type);
+    }
+
+    /// <summary>
+    /// Finds expression subtrees that can be locally evaluated
+    /// (i.e., they contain no parameter references).
+    /// </summary>
+    private sealed class CandidateFinder : ExpressionVisitor
+    {
+        private readonly HashSet<Expression> candidates = new HashSet<Expression>();
+        private bool cannotBeEvaluated;
+
+        public HashSet<Expression> FindCandidates(Expression expression)
+        {
+            this.Visit(expression);
+            return this.candidates;
+        }
+
+        public override Expression Visit(Expression node)
+        {
+            if (node is null)
+            {
+                return node;
+            }
+
+            bool savedCannotBeEvaluated = this.cannotBeEvaluated;
+            this.cannotBeEvaluated = false;
+            base.Visit(node);
+
+            if (!this.cannotBeEvaluated)
+            {
+                if (node.NodeType != ExpressionType.Parameter)
+                {
+                    this.candidates.Add(node);
+                }
+                else
+                {
+                    this.cannotBeEvaluated = true;
+                }
+            }
+
+            this.cannotBeEvaluated |= savedCannotBeEvaluated;
+            return node;
+        }
+    }
+
+    /// <summary>
+    /// Replaces candidate subtrees with their evaluated constant values.
+    /// </summary>
+    private sealed class SubtreeReplacer : ExpressionVisitor
+    {
+        private readonly HashSet<Expression> candidates;
+
+        public SubtreeReplacer(HashSet<Expression> candidates)
+        {
+            this.candidates = candidates;
+        }
+
+        public override Expression Visit(Expression node)
+        {
+            if (node is null)
+            {
+                return node;
+            }
+
+            if (this.candidates.Contains(node))
+            {
+                return Evaluate(node);
+            }
+
+            return base.Visit(node);
+        }
+    }
+}
