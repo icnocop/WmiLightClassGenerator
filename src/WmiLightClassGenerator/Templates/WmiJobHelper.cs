@@ -120,4 +120,32 @@ internal static class WmiJobHelper
     {
         return value.Replace("'", "\\'");
     }
+
+    /// <summary>
+    /// Queries the ASSOCIATORS of a completed job to find the path of an affected element.
+    /// WmiLight may not populate REF-type output parameters for async WMI operations.
+    /// This method provides a fallback by querying the job's associations.
+    /// </summary>
+    /// <param name="connection">The WMI connection.</param>
+    /// <param name="jobPath">The WMI object path of the completed job.</param>
+    /// <param name="resultClassName">The WMI class name of the expected result.</param>
+    /// <returns>The WMI path of the affected element, or <see langword="null"/> if not found.</returns>
+    public static string GetAffectedElementPath(WmiConnection connection, string jobPath, string resultClassName)
+    {
+        if (string.IsNullOrEmpty(jobPath))
+        {
+            return null;
+        }
+
+        string query = $"ASSOCIATORS OF {{{jobPath}}} WHERE ResultClass = {resultClassName}";
+        var wmiQuery = new WmiQuery(connection, query);
+        using var enumerator = wmiQuery.GetEnumerator();
+        if (enumerator.MoveNext())
+        {
+            using var result = enumerator.Current;
+            return result.Path;
+        }
+
+        return null;
+    }
 }

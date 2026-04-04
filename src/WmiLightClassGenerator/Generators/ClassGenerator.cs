@@ -184,6 +184,10 @@ public sealed class ClassGenerator
             {
                 string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
                 WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
+                if (hasAutoJobWait && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                {
+                    WriteAsyncRefFallback(w, inParam, "this.connection");
+                }
             }
         }
 
@@ -192,6 +196,10 @@ public sealed class ClassGenerator
         {
             string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
             WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
+            if (hasAutoJobWait && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            {
+                WriteAsyncRefFallback(w, outParam, "this.connection");
+            }
         }
 
         if (!hasAutoJobWait && returnParam is not null)
@@ -200,7 +208,7 @@ public sealed class ClassGenerator
             w.Line($"return outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
         }
 
-        w.CloseBrace(); // using
+        w.CloseBrace();
     }
 
     private static void WriteStaticMethodBody(
@@ -249,6 +257,10 @@ public sealed class ClassGenerator
             {
                 string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
                 WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
+                if (hasAutoJobWait && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                {
+                    WriteAsyncRefFallback(w, inParam, "connection");
+                }
             }
         }
 
@@ -256,6 +268,10 @@ public sealed class ClassGenerator
         {
             string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
             WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
+            if (hasAutoJobWait && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            {
+                WriteAsyncRefFallback(w, outParam, "connection");
+            }
         }
 
         if (!hasAutoJobWait && returnParam is not null)
@@ -607,6 +623,21 @@ public sealed class ClassGenerator
         {
             w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
         }
+    }
+
+    /// <summary>
+    /// For async methods with Reference output params, generates an ASSOCIATORS fallback
+    /// that queries the completed job to find the affected element path when WmiLight
+    /// does not populate the REF output parameter.
+    /// </summary>
+    private static void WriteAsyncRefFallback(CodeWriter w, WmiParameterMetadata param, string connRef)
+    {
+        string camelName = ToCamelCase(param.Name);
+        w.BlankLine();
+        w.Line($"if (string.IsNullOrEmpty({camelName}) && !string.IsNullOrEmpty(jobPath))");
+        w.OpenBrace();
+        w.Line($"{camelName} = WmiJobHelper.GetAffectedElementPath({connRef}, jobPath, \"{param.ReferenceClassName}\");");
+        w.CloseBrace();
     }
 
     private static string ToCamelCase(string name)
