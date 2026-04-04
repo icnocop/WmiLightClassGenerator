@@ -84,8 +84,11 @@ jobs:
 
     - name: Publish to NuGet
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.publishNuGet == 'true'
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
       run: |
-        dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
+        $PSNativeCommandUseErrorActionPreference = $true
+        dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
         git tag v${{ env.PACKAGE_VERSION }}
         git push origin v${{ env.PACKAGE_VERSION }}
 
