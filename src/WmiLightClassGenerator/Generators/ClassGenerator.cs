@@ -40,8 +40,9 @@ public sealed class ClassGenerator
     /// </summary>
     /// <param name="classMeta">The WMI class metadata.</param>
     /// <param name="className">The C# class name to generate.</param>
+    /// <param name="classDef">The class definition from the configuration file.</param>
     /// <returns>The generated C# source code.</returns>
-    public string Generate(WmiClassMetadata classMeta, string className)
+    public string Generate(WmiClassMetadata classMeta, string className, WmiClassDefinition classDef)
     {
         var w = new CodeWriter();
         WriteHeader(w, classMeta, className);
@@ -53,6 +54,10 @@ public sealed class ClassGenerator
         w.Line("using System.Linq.Expressions;");
         w.Line("using WmiLight;");
         w.BlankLine();
+
+        // A class uses "default optional" semantics when the config says so OR when
+        // the WMI schema uses the Required qualifier (meaning absence of Required = optional).
+        bool defaultOptional = classDef.DefaultOptional || classMeta.UsesRequiredQualifier;
 
         w.DocSummary($"Strongly-typed wrapper for the <c>{classMeta.WmiClassName}</c> WMI class in the <c>{CodeWriter.EscapeXml(classMeta.WmiNamespace)}</c> namespace.");
         w.Line($"public sealed class {className} : IDisposable");
@@ -69,8 +74,8 @@ public sealed class ClassGenerator
         WriteWmiObjectProperty(w);
         w.BlankLine();
         this.WriteProperties(w, classMeta);
-        WriteMethods(w, classMeta);
-        this.WriteTypedMethodOverloads(w, classMeta);
+        WriteMethods(w, classMeta, defaultOptional);
+        this.WriteTypedMethodOverloads(w, classMeta, defaultOptional);
         WriteStaticHelpers(w, classMeta, className);
         WriteWhereMethod(w, className);
         WriteToEmbeddedInstanceXml(w);
@@ -144,7 +149,8 @@ public sealed class ClassGenerator
         WmiParameterMetadata? returnParam,
         List<WmiParameterMetadata> outParams,
         HashSet<string> inOutNames,
-        bool hasAutoJobWait)
+        bool hasAutoJobWait,
+        bool defaultOptional)
     {
         bool hasInParams = method.InParameters.Count > 0;
 
@@ -155,7 +161,8 @@ public sealed class ClassGenerator
             w.Line("using var inParams = wmiMethod.CreateInParameters();");
             foreach (var inParam in method.InParameters)
             {
-                WriteSetParameter(w, "inParams", inParam);
+                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
+                WriteSetParameter(w, "inParams", inParam, isOptional);
             }
 
             w.Line("this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);");
@@ -217,7 +224,8 @@ public sealed class ClassGenerator
         WmiParameterMetadata? returnParam,
         List<WmiParameterMetadata> outParams,
         HashSet<string> inOutNames,
-        bool hasAutoJobWait)
+        bool hasAutoJobWait,
+        bool defaultOptional)
     {
         bool hasInParams = method.InParameters.Count > 0;
 
@@ -229,7 +237,8 @@ public sealed class ClassGenerator
             w.Line("using var inParams = wmiMethod.CreateInParameters();");
             foreach (var inParam in method.InParameters)
             {
-                WriteSetParameter(w, "inParams", inParam);
+                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
+                WriteSetParameter(w, "inParams", inParam, isOptional);
             }
 
             w.Line("connection.ExecuteMethod(wmiMethod, inParams, out var outResult);");
@@ -445,16 +454,16 @@ public sealed class ClassGenerator
         w.Line("public void Dispose() => this.wmiObject?.Dispose();");
     }
 
-    private static void WriteMethods(CodeWriter w, WmiClassMetadata classMeta)
+    private static void WriteMethods(CodeWriter w, WmiClassMetadata classMeta, bool defaultOptional)
     {
         foreach (var method in classMeta.Methods)
         {
             w.BlankLine();
-            WriteMethod(w, method);
+            WriteMethod(w, method, defaultOptional);
         }
     }
 
-    private static void WriteMethod(CodeWriter w, WmiMethodMetadata method)
+    private static void WriteMethod(CodeWriter w, WmiMethodMetadata method, bool defaultOptional)
     {
         // Separate ReturnValue from other output params
         var returnParam = method.OutParameters.FirstOrDefault(p =>
@@ -498,19 +507,39 @@ public sealed class ClassGenerator
         }
 
         // Build parameter list
-        var paramParts = new List<string>();
+        // ref (in-out) and out params go first (required), then optional params (with defaults).
+        var requiredParts = new List<string>();
+        var optionalParts = new List<string>();
         foreach (var inParam in method.InParameters)
         {
             string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
-            string modifier = inOutNames.Contains(inParam.Name) ? "ref " : string.Empty;
-            paramParts.Add($"{modifier}{paramType} {ToCamelCase(inParam.Name)}");
+            if (inOutNames.Contains(inParam.Name))
+            {
+                requiredParts.Add($"ref {paramType} {ToCamelCase(inParam.Name)}");
+            }
+            else if (IsEffectivelyOptional(inParam, defaultOptional))
+            {
+                // Optional parameters use nullable types with null defaults.
+                bool isValueType = CimTypeMapper.IsValueType(inParam.CimType) && !inParam.IsArray;
+                string nullableType = isValueType ? $"{paramType}?" : paramType;
+                optionalParts.Add($"{nullableType} {ToCamelCase(inParam.Name)} = null");
+            }
+            else
+            {
+                requiredParts.Add($"{paramType} {ToCamelCase(inParam.Name)}");
+            }
         }
 
         foreach (var outParam in pureOutParams)
         {
             string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-            paramParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
+            requiredParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
         }
+
+        // Required params first, then optional params (C# requires optional params at the end)
+        var paramParts = new List<string>();
+        paramParts.AddRange(requiredParts);
+        paramParts.AddRange(optionalParts);
 
         string paramList = string.Join(", ", paramParts);
 
@@ -551,11 +580,11 @@ public sealed class ClassGenerator
         // Method body
         if (method.IsStatic)
         {
-            WriteStaticMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait);
+            WriteStaticMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
         }
         else
         {
-            WriteInstanceMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait);
+            WriteInstanceMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
         }
 
         w.CloseBrace();
@@ -564,30 +593,90 @@ public sealed class ClassGenerator
     /// <summary>
     /// WmiLight SetPropertyValue only supports scalar types and string[].
     /// For non-string array parameters, generate a TODO comment.
+    /// Pure in-parameters (not in-out) are optional and wrapped in null-checks.
     /// </summary>
-    private static void WriteSetParameter(CodeWriter w, string target, WmiParameterMetadata param)
+    private static void WriteSetParameter(CodeWriter w, string target, WmiParameterMetadata param, bool isOptional = false)
     {
         string camelName = ToCamelCase(param.Name);
+        bool isValueType = CimTypeMapper.IsValueType(param.CimType) && !param.IsArray;
+
+        // For optional parameters, access .Value for nullable value types
+        string valueExpr = isOptional && isValueType ? $"{camelName}.Value" : camelName;
 
         if (param.IsArray && param.CimType != System.Management.CimType.String)
         {
-            w.Line($"// TODO: WmiLight does not support SetPropertyValue for {CimTypeMapper.ToCSharpType(param.CimType, param.IsArray)}.");
-            w.Line($"// {target}.SetPropertyValue(\"{param.Name}\", {camelName});");
+            string innerComment = $"// TODO: WmiLight does not support SetPropertyValue for {CimTypeMapper.ToCSharpType(param.CimType, param.IsArray)}.";
+            string innerSet = $"// {target}.SetPropertyValue(\"{param.Name}\", {valueExpr});";
+            if (isOptional)
+            {
+                w.Line($"if ({camelName} is not null)");
+                w.OpenBrace();
+                w.Line(innerComment);
+                w.Line(innerSet);
+                w.CloseBrace();
+            }
+            else
+            {
+                w.Line(innerComment);
+                w.Line(innerSet);
+            }
         }
         else if (!param.IsArray && (param.CimType == System.Management.CimType.UInt64 || param.CimType == System.Management.CimType.SInt64))
         {
             // WMI COM stores uint64/sint64 as VT_BSTR — pass as string to avoid WBEM_E_TYPE_MISMATCH
-            w.Line($"{target}.SetPropertyValue(\"{param.Name}\", {camelName}.ToString(System.Globalization.CultureInfo.InvariantCulture));");
+            string line = $"{target}.SetPropertyValue(\"{param.Name}\", {valueExpr}.ToString(System.Globalization.CultureInfo.InvariantCulture));";
+            WriteOptionalGuard(w, camelName, isOptional, isValueType, line);
         }
         else if (!param.IsArray && (param.CimType == System.Management.CimType.UInt16 || param.CimType == System.Management.CimType.SInt16 || param.CimType == System.Management.CimType.UInt8 || param.CimType == System.Management.CimType.SInt8))
         {
             // WMI COM expects VT_I4 (32-bit integer) for 8-bit and 16-bit values — cast to int to avoid WBEM_E_TYPE_MISMATCH
-            w.Line($"{target}.SetPropertyValue(\"{param.Name}\", (int){camelName});");
+            string line = $"{target}.SetPropertyValue(\"{param.Name}\", (int){valueExpr});";
+            WriteOptionalGuard(w, camelName, isOptional, isValueType, line);
         }
         else
         {
-            w.Line($"{target}.SetPropertyValue(\"{param.Name}\", {camelName});");
+            string line = $"{target}.SetPropertyValue(\"{param.Name}\", {valueExpr});";
+            WriteOptionalGuard(w, camelName, isOptional, isValueType, line);
         }
+    }
+
+    /// <summary>
+    /// Writes a SetPropertyValue line, optionally wrapped in a null-check for optional parameters.
+    /// </summary>
+    private static void WriteOptionalGuard(CodeWriter w, string camelName, bool isOptional, bool isValueType, string innerLine)
+    {
+        if (!isOptional)
+        {
+            w.Line(innerLine);
+            return;
+        }
+
+        string condition = isValueType ? $"{camelName}.HasValue" : $"{camelName} is not null";
+        w.Line($"if ({condition})");
+        w.OpenBrace();
+        w.Line(innerLine);
+        w.CloseBrace();
+    }
+
+    /// <summary>
+    /// Determines whether a parameter is effectively optional.
+    /// A parameter is optional when it has the <c>[Optional]</c> qualifier explicitly,
+    /// OR when the class uses the <c>[Required]</c> qualifier convention (or config override)
+    /// and this parameter does NOT have <c>[Required]</c>.
+    /// </summary>
+    private static bool IsEffectivelyOptional(WmiParameterMetadata param, bool defaultOptional)
+    {
+        if (param.IsOptional)
+        {
+            return true;
+        }
+
+        if (param.IsRequired)
+        {
+            return false;
+        }
+
+        return defaultOptional;
     }
 
     private static bool IsStringArrayType(WmiPropertyMetadata prop)
@@ -723,15 +812,15 @@ public sealed class ClassGenerator
         w.CloseBrace();
     }
 
-    private void WriteTypedMethodOverloads(CodeWriter w, WmiClassMetadata classMeta)
+    private void WriteTypedMethodOverloads(CodeWriter w, WmiClassMetadata classMeta, bool defaultOptional)
     {
         foreach (var method in classMeta.Methods)
         {
-            this.WriteTypedMethodOverload(w, method);
+            this.WriteTypedMethodOverload(w, method, defaultOptional);
         }
     }
 
-    private void WriteTypedMethodOverload(CodeWriter w, WmiMethodMetadata method)
+    private void WriteTypedMethodOverload(CodeWriter w, WmiMethodMetadata method, bool defaultOptional)
     {
         // Only generate typed overloads for methods with auto-job-wait
         // that have reference output parameters mappable to generated classes
@@ -786,7 +875,8 @@ public sealed class ClassGenerator
         w.BlankLine();
 
         // Build parameter list (same as original but without the typed out params — they become the return)
-        var paramParts = new List<string>();
+        var typedRequiredParts = new List<string>();
+        var typedOptionalParts = new List<string>();
         foreach (var inParam in method.InParameters)
         {
             string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
@@ -797,8 +887,20 @@ public sealed class ClassGenerator
                 continue;
             }
 
-            string modifier = inOutNames.Contains(inParam.Name) ? "ref " : string.Empty;
-            paramParts.Add($"{modifier}{paramType} {ToCamelCase(inParam.Name)}");
+            if (inOutNames.Contains(inParam.Name))
+            {
+                typedRequiredParts.Add($"ref {paramType} {ToCamelCase(inParam.Name)}");
+            }
+            else if (IsEffectivelyOptional(inParam, defaultOptional))
+            {
+                bool isValueType = CimTypeMapper.IsValueType(inParam.CimType) && !inParam.IsArray;
+                string nullableType = isValueType ? $"{paramType}?" : paramType;
+                typedOptionalParts.Add($"{nullableType} {ToCamelCase(inParam.Name)} = null");
+            }
+            else
+            {
+                typedRequiredParts.Add($"{paramType} {ToCamelCase(inParam.Name)}");
+            }
         }
 
         // Include non-typed out params in the signature
@@ -810,7 +912,7 @@ public sealed class ClassGenerator
             }
 
             string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-            paramParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
+            typedRequiredParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
         }
 
         // Determine return type from typed params
@@ -840,7 +942,10 @@ public sealed class ClassGenerator
             return;
         }
 
-        string paramList = string.Join(", ", paramParts);
+        var typedParamParts = new List<string>();
+        typedParamParts.AddRange(typedRequiredParts);
+        typedParamParts.AddRange(typedOptionalParts);
+        string paramList = string.Join(", ", typedParamParts);
 
         // Write doc
         w.DocSummary(method.Description is not null
@@ -862,38 +967,41 @@ public sealed class ClassGenerator
 
         w.OpenBrace();
 
-        // Call the base method
+        // Call the base method using named arguments to match the reordered signature
+        // (required params including out come first, optional params come last).
         var callParams = new List<string>();
         foreach (var inParam in method.InParameters)
         {
+            string camel = ToCamelCase(inParam.Name);
             if (inOutNames.Contains(inParam.Name) && refParams.Any(p => p.Name == inParam.Name))
             {
                 // This ref param becomes the return — pass a local variable
                 string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
-                w.Line($"{paramType} {ToCamelCase(inParam.Name)} = default;");
-                callParams.Add($"ref {ToCamelCase(inParam.Name)}");
+                w.Line($"{paramType} {camel} = default;");
+                callParams.Add($"{camel}: ref {camel}");
             }
             else if (inOutNames.Contains(inParam.Name))
             {
-                callParams.Add($"ref {ToCamelCase(inParam.Name)}");
+                callParams.Add($"{camel}: ref {camel}");
             }
             else
             {
-                callParams.Add(ToCamelCase(inParam.Name));
+                callParams.Add($"{camel}: {camel}");
             }
         }
 
         foreach (var outParam in pureOutParams)
         {
+            string camel = ToCamelCase(outParam.Name);
             if (typedOutParams.Any(p => p.Name == outParam.Name))
             {
                 string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-                w.Line($"{paramType} {ToCamelCase(outParam.Name)} = default;");
-                callParams.Add($"out {ToCamelCase(outParam.Name)}");
+                w.Line($"{paramType} {camel} = default;");
+                callParams.Add($"{camel}: out {camel}");
             }
             else
             {
-                callParams.Add($"out {ToCamelCase(outParam.Name)}");
+                callParams.Add($"{camel}: out {camel}");
             }
         }
 
@@ -1030,7 +1138,21 @@ public sealed class ClassGenerator
             w.Line($"public {enumName} {prop.Name}");
             w.OpenBrace();
             w.Line($"get => ({enumName})this.wmiObject.GetPropertyValue<{wmiType}>(\"{prop.Name}\");");
-            w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", ({wmiType})value);");
+
+            // Apply the same WMI COM type-mismatch workarounds as WriteSetParameter
+            if (prop.CimType is System.Management.CimType.UInt64 or System.Management.CimType.SInt64)
+            {
+                w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (({wmiType})value).ToString(System.Globalization.CultureInfo.InvariantCulture));");
+            }
+            else if (prop.CimType is System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
+            {
+                w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (int)({wmiType})value);");
+            }
+            else
+            {
+                w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", ({wmiType})value);");
+            }
+
             w.CloseBrace();
         }
         else
@@ -1039,10 +1161,14 @@ public sealed class ClassGenerator
             w.OpenBrace();
             w.Line($"get => this.wmiObject.GetPropertyValue<{wmiType}>(\"{prop.Name}\");");
 
-            // WMI COM stores uint64/sint64 as VT_BSTR — pass as string to avoid WBEM_E_TYPE_MISMATCH
-            if (prop.CimType == System.Management.CimType.UInt64 || prop.CimType == System.Management.CimType.SInt64)
+            // WMI COM type-mismatch workarounds — same as WriteSetParameter
+            if (prop.CimType is System.Management.CimType.UInt64 or System.Management.CimType.SInt64)
             {
                 w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", value.ToString(System.Globalization.CultureInfo.InvariantCulture));");
+            }
+            else if (prop.CimType is System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
+            {
+                w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (int)value);");
             }
             else
             {

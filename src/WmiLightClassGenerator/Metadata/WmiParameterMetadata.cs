@@ -44,4 +44,14 @@ public sealed class WmiParameterMetadata
     /// Extracted from the <c>CIMTYPE</c> qualifier (e.g. <c>ref:CIM_ComputerSystem</c> yields <c>CIM_ComputerSystem</c>).
     /// </summary>
     public string? ReferenceClassName { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this parameter has the WMI <c>Optional</c> qualifier.
+    /// </summary>
+    public bool IsOptional { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this parameter has the WMI <c>Required</c> qualifier.
+    /// </summary>
+    public bool IsRequired { get; set; }
 }

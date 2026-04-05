@@ -95,6 +95,7 @@ public static class CimTypeMapper
         return cimType switch
         {
             CimType.String => false,
+            CimType.DateTime => false, // Maps to string (DMTF format)
             CimType.Reference => false,
             CimType.Object => false,
             _ => true,

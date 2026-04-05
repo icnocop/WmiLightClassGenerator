@@ -235,7 +235,7 @@ public sealed class OperatingSystem : IDisposable
     public byte ForegroundApplicationBoost
     {
         get => this.wmiObject.GetPropertyValue<byte>("ForegroundApplicationBoost");
-        set => this.wmiObject.SetPropertyValue("ForegroundApplicationBoost", value);
+        set => this.wmiObject.SetPropertyValue("ForegroundApplicationBoost", (int)value);
     }
 
     /// <summary>

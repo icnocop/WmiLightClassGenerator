@@ -121,7 +121,7 @@ internal sealed class Program
                     }
 
                     // Generate the wrapper class
-                    string classCode = classGen.Generate(metadata, className);
+                    string classCode = classGen.Generate(metadata, className, classDef);
                     string classFile = Path.Combine(outputDir, classDef.EffectiveOutputFileName);
                     WriteFile(classFile, classCode);
 

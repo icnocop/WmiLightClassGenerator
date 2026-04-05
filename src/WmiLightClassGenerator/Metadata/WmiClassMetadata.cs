@@ -41,4 +41,14 @@ public sealed class WmiClassMetadata
     /// Gets or sets the names of key properties (used for instance identification).
     /// </summary>
     public List<string> KeyProperties { get; set; } = [];
+
+    /// <summary>
+    /// Gets a value indicating whether any in-parameter across all methods has the
+    /// <c>Required</c> qualifier. When true, the class uses the <c>Required</c> qualifier
+    /// convention, meaning parameters without <c>Required</c> are implicitly optional.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool UsesRequiredQualifier =>
+        this.Methods.Any(m =>
+            m.InParameters.Any(p => p.IsRequired));
 }

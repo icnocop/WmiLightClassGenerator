@@ -35,6 +35,15 @@ public sealed class WmiClassDefinition
     public string? OutputFileName { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether in-parameters of methods in this class
+    /// should default to optional unless they have the <c>Required</c> qualifier.
+    /// Use this for WMI classes that don't expose the <c>Required</c> qualifier but
+    /// whose parameters are effectively optional at the COM level.
+    /// </summary>
+    [JsonPropertyName("defaultOptional")]
+    public bool DefaultOptional { get; set; }
+
+    /// <summary>
     /// Gets the effective C# class name.
     /// </summary>
     [JsonIgnore]

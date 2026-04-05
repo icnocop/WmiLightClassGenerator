@@ -119,6 +119,8 @@ public sealed class WmiMetadataReader
             Description = GetQualifierValue(param.Qualifiers, "Description"),
             EnumInfo = ReadEnumQualifiers(param.Name, param.Qualifiers, param.Type),
             EmbeddedClassName = GetQualifierValue(param.Qualifiers, "EmbeddedInstance"),
+            IsOptional = HasQualifier(param.Qualifiers, "Optional"),
+            IsRequired = HasQualifier(param.Qualifiers, "Required"),
         };
 
         // For reference parameters, extract the referenced class from the CIMTYPE qualifier (e.g. "ref:CIM_ComputerSystem")
