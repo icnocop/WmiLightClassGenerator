@@ -431,7 +431,7 @@ public sealed class WmiProcess : IDisposable
     {
         using var wmiMethod = this.wmiObject.GetMethod("Terminate");
         using var inParams = wmiMethod.CreateInParameters();
-        inParams.SetPropertyValue("Reason", reason);
+        inParams.SetPropertyValue("Reason", (int)reason);
         this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);
         using (outResult)
         {

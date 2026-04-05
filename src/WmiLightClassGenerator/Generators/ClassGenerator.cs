@@ -627,9 +627,9 @@ public sealed class ClassGenerator
             string line = $"{target}.SetPropertyValue(\"{param.Name}\", {valueExpr}.ToString(System.Globalization.CultureInfo.InvariantCulture));";
             WriteOptionalGuard(w, camelName, isOptional, isValueType, line);
         }
-        else if (!param.IsArray && (param.CimType == System.Management.CimType.UInt16 || param.CimType == System.Management.CimType.SInt16 || param.CimType == System.Management.CimType.UInt8 || param.CimType == System.Management.CimType.SInt8))
+        else if (!param.IsArray && (param.CimType == System.Management.CimType.UInt32 || param.CimType == System.Management.CimType.UInt16 || param.CimType == System.Management.CimType.SInt16 || param.CimType == System.Management.CimType.UInt8 || param.CimType == System.Management.CimType.SInt8))
         {
-            // WMI COM expects VT_I4 (32-bit integer) for 8-bit and 16-bit values — cast to int to avoid WBEM_E_TYPE_MISMATCH
+            // WMI COM expects VT_I4 (32-bit signed integer) for unsigned 32-bit, 8-bit, and 16-bit values — cast to int to avoid WBEM_E_TYPE_MISMATCH
             string line = $"{target}.SetPropertyValue(\"{param.Name}\", (int){valueExpr});";
             WriteOptionalGuard(w, camelName, isOptional, isValueType, line);
         }
@@ -1157,7 +1157,7 @@ public sealed class ClassGenerator
             {
                 w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (({wmiType})value).ToString(System.Globalization.CultureInfo.InvariantCulture));");
             }
-            else if (prop.CimType is System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
+            else if (prop.CimType is System.Management.CimType.UInt32 or System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
             {
                 w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (int)({wmiType})value);");
             }
@@ -1179,7 +1179,7 @@ public sealed class ClassGenerator
             {
                 w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", value.ToString(System.Globalization.CultureInfo.InvariantCulture));");
             }
-            else if (prop.CimType is System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
+            else if (prop.CimType is System.Management.CimType.UInt32 or System.Management.CimType.UInt16 or System.Management.CimType.SInt16 or System.Management.CimType.UInt8 or System.Management.CimType.SInt8)
             {
                 w.Line($"set => this.wmiObject.SetPropertyValue(\"{prop.Name}\", (int)value);");
             }

@@ -650,8 +650,8 @@ public sealed class OperatingSystem : IDisposable
         using var inParams = wmiMethod.CreateInParameters();
         inParams.SetPropertyValue("Comment", comment);
         inParams.SetPropertyValue("Flags", flags);
-        inParams.SetPropertyValue("ReasonCode", reasonCode);
-        inParams.SetPropertyValue("Timeout", timeout);
+        inParams.SetPropertyValue("ReasonCode", (int)reasonCode);
+        inParams.SetPropertyValue("Timeout", (int)timeout);
         this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);
         using (outResult)
         {
