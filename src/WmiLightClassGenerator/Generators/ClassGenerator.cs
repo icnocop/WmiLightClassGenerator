@@ -708,6 +708,19 @@ public sealed class ClassGenerator
             w.Line($"{camelName} = default;");
             w.CloseBrace();
         }
+        else if (cimType == System.Management.CimType.Object)
+        {
+            // WMI may return a WbemClassObject for embedded object out params
+            // (e.g. MSFT_StorageExtendedStatus), which cannot be cast to string.
+            w.Line("try");
+            w.OpenBrace();
+            w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
+            w.CloseBrace();
+            w.Line("catch (System.InvalidCastException)");
+            w.OpenBrace();
+            w.Line($"{camelName} = default;");
+            w.CloseBrace();
+        }
         else
         {
             w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
