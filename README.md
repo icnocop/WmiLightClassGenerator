@@ -3,7 +3,7 @@
 [![Build](https://github.com/icnocop/WmiLightClassGenerator/actions/workflows/build.yml/badge.svg)](https://github.com/icnocop/WmiLightClassGenerator/actions/workflows/build.yml)
 [![NuGet](https://img.shields.io/nuget/v/WmiLightClassGenerator.svg)](https://www.nuget.org/packages/WmiLightClassGenerator)
 
-Generates strongly-typed C# wrapper classes for Windows Management Instrumentation (WMI) classes using the [WmiLight](https://github.com/MartinKuschworthy/WmiLight) library.
+Generates strongly-typed C# wrapper classes for Windows Management Instrumentation (WMI) classes using the [WmiLight](https://github.com/MartinKuschnik/WmiLight) library.
 
 ## Features
 
