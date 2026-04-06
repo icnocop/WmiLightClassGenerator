@@ -15,6 +15,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/WmiLightClassGenerator.IntegrationTests/WmiLightClassGenerator.IntegrationTests.csproj" />
+    <Project Path="test/WmiLightClassGenerator.UnitTests/WmiLightClassGenerator.UnitTests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/WmiLightClassGenerator.Sample/WmiLightClassGenerator.Sample.csproj" />

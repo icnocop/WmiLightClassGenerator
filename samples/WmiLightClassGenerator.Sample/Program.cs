@@ -4,7 +4,7 @@ using WmiLight;
 using WmiLightClassGenerator.Sample;
 using OperatingSystem = WmiLightClassGenerator.Sample.OperatingSystem;
 
-using var connection = new WmiConnection(@"\\.\root\cimv2");
+using var connection = new WmiConnection();
 
 // Display operating system information
 Console.WriteLine("=== Operating System ===");

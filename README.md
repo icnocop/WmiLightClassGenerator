@@ -72,6 +72,25 @@ $(WmiLightClassGeneratorExe) wmi-classes.json
 
 This generates strongly-typed C# classes in the configured output directory.
 
+You can then use the generated classes in your code:
+
+```csharp
+using WmiLight;
+using MyProject.Wmi;
+using OperatingSystem = MyProject.Wmi.OperatingSystem;
+
+using var connection = new WmiConnection();
+
+foreach (var os in OperatingSystem.GetInstances(connection))
+{
+    Console.WriteLine($"  Caption: {os.Caption}");
+    Console.WriteLine($"  Version: {os.Version}");
+    Console.WriteLine($"  OSArchitecture: {os.OSArchitecture}");
+    Console.WriteLine($"  TotalVisibleMemorySize: {os.TotalVisibleMemorySize} KB");
+    os.Dispose();
+}
+```
+
 ## Configuration Reference
 
 | Property | Type | Default | Description |

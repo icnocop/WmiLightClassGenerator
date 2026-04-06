@@ -1,0 +1,21 @@
+{
+  "outputDirectory": "Generated",
+  "namespace": "WmiLightClassGenerator.UnitTests",
+  "classes": [
+    {
+      "wmiNamespace": "root\\cimv2",
+      "wmiClassName": "Win32_OperatingSystem",
+      "className": "OperatingSystem"
+    },
+    {
+      "wmiNamespace": "root\\cimv2",
+      "wmiClassName": "Win32_Process",
+      "className": "WmiProcess"
+    },
+    {
+      "wmiNamespace": "root\\cimv2",
+      "wmiClassName": "Win32_PnPEntity",
+      "className": "PnPEntity"
+    }
+  ]
+}

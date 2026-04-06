@@ -5,12 +5,19 @@ namespace WmiLightClassGenerator.IntegrationTests;
 using System.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+/// <summary>
+/// Integration tests for the WmiLightClassGenerator command-line tool.
+/// </summary>
 [TestClass]
 public class WmiLightClassGeneratorTests
 {
     private static readonly string ExePath = Path.Combine(
         AppContext.BaseDirectory, "WmiLightClassGenerator.exe");
 
+    /// <summary>
+    /// Verifies that running without a config file returns an error and exit code 1.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task NoConfigFile_ReturnsErrorAndExitCode1()
     {
@@ -24,6 +31,10 @@ public class WmiLightClassGeneratorTests
             "Config file not found. Provide a path argument or place wmi-classes.json in the current directory.");
     }
 
+    /// <summary>
+    /// Verifies that an empty config file returns a JSON parse error and exit code 1.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task EmptyFile_ReturnsJsonParseErrorAndExitCode1()
     {
@@ -39,6 +50,10 @@ public class WmiLightClassGeneratorTests
             "The input does not contain any JSON tokens");
     }
 
+    /// <summary>
+    /// Verifies that an empty JSON object config succeeds with exit code 0.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task EmptyJsonObject_ReturnsSuccessAndExitCode0()
     {
@@ -52,6 +67,10 @@ public class WmiLightClassGeneratorTests
         StringAssert.Contains(stdout, "Generation complete. 0 classes processed.");
     }
 
+    /// <summary>
+    /// Verifies that an empty classes array config succeeds with exit code 0.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task EmptyClassesArray_ReturnsSuccessAndExitCode0()
     {
@@ -67,6 +86,10 @@ public class WmiLightClassGeneratorTests
         StringAssert.Contains(stdout, "Generation complete. 0 classes processed.");
     }
 
+    /// <summary>
+    /// Verifies that Win32_OperatingSystem generates a class file with correct namespace and class name.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task Win32OperatingSystem_GeneratesClassFile()
     {
@@ -101,6 +124,10 @@ public class WmiLightClassGeneratorTests
         StringAssert.Contains(content, "public sealed class OperatingSystem");
     }
 
+    /// <summary>
+    /// Verifies that the sample project can be built and run successfully.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous test.</returns>
     [TestMethod]
     public async Task SampleProject_GenerateAndRun()
     {
