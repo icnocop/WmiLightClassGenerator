@@ -307,8 +307,9 @@ public sealed class ClassGenerator
     }
 
     /// <summary>
-    /// WmiLight SetPropertyValue only supports scalar types and string[].
-    /// For non-string array parameters, generate a TODO comment.
+    /// WmiLight SetPropertyValue supports scalar types and string[].
+    /// CimTypes that map to string (String, Reference, DateTime, Object) use string[] for arrays.
+    /// For non-string array parameters (e.g. uint32[]), generate a TODO comment.
     /// Pure in-parameters (not in-out) are optional and wrapped in null-checks.
     /// </summary>
     private static void WriteSetParameter(CodeWriter w, string target, WmiParameterMetadata param, bool isOptional = false)
@@ -319,7 +320,7 @@ public sealed class ClassGenerator
         // For optional parameters, access .Value for nullable value types
         string valueExpr = isOptional && isValueType ? $"{camelName}.Value" : camelName;
 
-        if (param.IsArray && param.CimType != System.Management.CimType.String)
+        if (param.IsArray && CimTypeMapper.ToCSharpType(param.CimType) != "string")
         {
             string innerComment = $"// TODO: WmiLight does not support SetPropertyValue for {CimTypeMapper.ToCSharpType(param.CimType, param.IsArray)}.";
             string innerSet = $"// {target}.SetPropertyValue(\"{param.Name}\", {valueExpr});";
