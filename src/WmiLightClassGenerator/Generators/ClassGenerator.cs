@@ -15,6 +15,7 @@ public sealed class ClassGenerator
     private readonly Dictionary<string, string> propertyTypeOverrides;
     private readonly HashSet<string> stringEnumNames;
     private readonly Dictionary<string, string> referenceClassMappings;
+    private readonly HashSet<string> warnedEmbeddedClassNames = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ClassGenerator"/> class.
@@ -74,7 +75,7 @@ public sealed class ClassGenerator
         WriteWmiObjectProperty(w);
         w.BlankLine();
         this.WriteProperties(w, classMeta);
-        WriteMethods(w, classMeta, defaultOptional);
+        this.WriteMethods(w, classMeta, defaultOptional);
         this.WriteTypedMethodOverloads(w, classMeta, defaultOptional);
         WriteStaticHelpers(w, classMeta, className);
         WriteWhereMethod(w, className);
@@ -141,155 +142,6 @@ public sealed class ClassGenerator
     {
         w.DocSummary("Gets the underlying WMI object.");
         w.Line("public WmiObject WmiObject => this.wmiObject;");
-    }
-
-    private static void WriteInstanceMethodBody(
-        CodeWriter w,
-        WmiMethodMetadata method,
-        WmiParameterMetadata? returnParam,
-        List<WmiParameterMetadata> outParams,
-        HashSet<string> inOutNames,
-        bool hasAutoJobWait,
-        bool defaultOptional)
-    {
-        bool hasInParams = method.InParameters.Count > 0;
-
-        w.Line($"using var wmiMethod = this.wmiObject.GetMethod(\"{method.Name}\");");
-
-        if (hasInParams)
-        {
-            w.Line("using var inParams = wmiMethod.CreateInParameters();");
-            foreach (var inParam in method.InParameters)
-            {
-                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
-                WriteSetParameter(w, "inParams", inParam, isOptional);
-            }
-
-            w.Line("this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);");
-        }
-        else
-        {
-            w.Line("this.wmiObject.ExecuteMethod(wmiMethod, out var outResult);");
-        }
-
-        w.Line("using (outResult)");
-        w.OpenBrace();
-
-        if (hasAutoJobWait)
-        {
-            // Read ReturnValue and Job first, then wait for job completion
-            string retType = CimTypeMapper.ToCSharpType(returnParam!.CimType, returnParam.IsArray);
-            w.Line($"{retType} returnValue = outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
-            w.Line("string jobPath = outResult.GetPropertyValue<string>(\"Job\");");
-            w.Line("WmiJobHelper.WaitForJob(this.connection, returnValue, jobPath);");
-        }
-
-        // Assign ref (in/out) parameters from output
-        foreach (var inParam in method.InParameters)
-        {
-            if (inOutNames.Contains(inParam.Name))
-            {
-                string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
-                WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
-                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
-                {
-                    WriteAsyncRefFallback(w, inParam, "this.connection");
-                }
-            }
-        }
-
-        // Assign pure out parameters
-        foreach (var outParam in outParams)
-        {
-            string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-            WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
-            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
-            {
-                WriteAsyncRefFallback(w, outParam, "this.connection");
-            }
-        }
-
-        if (!hasAutoJobWait && returnParam is not null)
-        {
-            string retType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
-            w.Line($"return outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
-        }
-
-        w.CloseBrace();
-    }
-
-    private static void WriteStaticMethodBody(
-        CodeWriter w,
-        WmiMethodMetadata method,
-        WmiParameterMetadata? returnParam,
-        List<WmiParameterMetadata> outParams,
-        HashSet<string> inOutNames,
-        bool hasAutoJobWait,
-        bool defaultOptional)
-    {
-        bool hasInParams = method.InParameters.Count > 0;
-
-        w.Line("using var wmiClass = connection.GetClass(WmiClassName);");
-        w.Line($"using var wmiMethod = wmiClass.GetMethod(\"{method.Name}\");");
-
-        if (hasInParams)
-        {
-            w.Line("using var inParams = wmiMethod.CreateInParameters();");
-            foreach (var inParam in method.InParameters)
-            {
-                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
-                WriteSetParameter(w, "inParams", inParam, isOptional);
-            }
-
-            w.Line("connection.ExecuteMethod(wmiMethod, inParams, out var outResult);");
-        }
-        else
-        {
-            w.Line("connection.ExecuteMethod(wmiMethod, out var outResult);");
-        }
-
-        w.Line("using (outResult)");
-        w.OpenBrace();
-
-        if (hasAutoJobWait)
-        {
-            string retType = CimTypeMapper.ToCSharpType(returnParam!.CimType, returnParam.IsArray);
-            w.Line($"{retType} returnValue = outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
-            w.Line("string jobPath = outResult.GetPropertyValue<string>(\"Job\");");
-            w.Line("WmiJobHelper.WaitForJob(connection, returnValue, jobPath);");
-        }
-
-        // Assign ref (in/out) parameters from output
-        foreach (var inParam in method.InParameters)
-        {
-            if (inOutNames.Contains(inParam.Name))
-            {
-                string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
-                WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType);
-                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
-                {
-                    WriteAsyncRefFallback(w, inParam, "connection");
-                }
-            }
-        }
-
-        foreach (var outParam in outParams)
-        {
-            string outType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-            WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType);
-            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
-            {
-                WriteAsyncRefFallback(w, outParam, "connection");
-            }
-        }
-
-        if (!hasAutoJobWait && returnParam is not null)
-        {
-            string retType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
-            w.Line($"return outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
-        }
-
-        w.CloseBrace();
     }
 
     private static void WriteStaticHelpers(CodeWriter w, WmiClassMetadata classMeta, string className)
@@ -454,142 +306,6 @@ public sealed class ClassGenerator
         w.Line("public void Dispose() => this.wmiObject?.Dispose();");
     }
 
-    private static void WriteMethods(CodeWriter w, WmiClassMetadata classMeta, bool defaultOptional)
-    {
-        foreach (var method in classMeta.Methods)
-        {
-            w.BlankLine();
-            WriteMethod(w, method, defaultOptional);
-        }
-    }
-
-    private static void WriteMethod(CodeWriter w, WmiMethodMetadata method, bool defaultOptional)
-    {
-        // Separate ReturnValue from other output params
-        var returnParam = method.OutParameters.FirstOrDefault(p =>
-            p.Name.Equals("ReturnValue", StringComparison.OrdinalIgnoreCase));
-        var outOnlyParams = method.OutParameters
-            .Where(p => !p.Name.Equals("ReturnValue", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        // Detect in/out parameters (appear in both InParameters and OutParameters)
-        var inOutNames = new HashSet<string>(
-            method.InParameters.Select(p => p.Name)
-                .Intersect(outOnlyParams.Select(p => p.Name), StringComparer.OrdinalIgnoreCase),
-            StringComparer.OrdinalIgnoreCase);
-
-        // Detect auto-job-wait: method has an out param named "Job" of string/reference type
-        var jobParam = outOnlyParams.FirstOrDefault(p =>
-            p.Name.Equals("Job", StringComparison.OrdinalIgnoreCase)
-            && (p.CimType == System.Management.CimType.String || p.CimType == System.Management.CimType.Reference)
-            && !p.IsArray);
-        bool hasAutoJobWait = jobParam is not null && returnParam is not null;
-
-        // Pure out params are those not also in InParameters; exclude Job if auto-wait
-        var pureOutParams = outOnlyParams
-            .Where(p => !inOutNames.Contains(p.Name))
-            .Where(p => !hasAutoJobWait || !p.Name.Equals("Job", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        // With auto-job-wait, return type becomes void (ReturnValue is consumed internally)
-        string returnType;
-        if (hasAutoJobWait)
-        {
-            returnType = "void";
-        }
-        else if (returnParam is not null)
-        {
-            returnType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
-        }
-        else
-        {
-            returnType = "void";
-        }
-
-        // Build parameter list
-        // ref (in-out) and out params go first (required), then optional params (with defaults).
-        var requiredParts = new List<string>();
-        var optionalParts = new List<string>();
-        foreach (var inParam in method.InParameters)
-        {
-            string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
-            if (inOutNames.Contains(inParam.Name))
-            {
-                requiredParts.Add($"ref {paramType} {ToCamelCase(inParam.Name)}");
-            }
-            else if (IsEffectivelyOptional(inParam, defaultOptional))
-            {
-                // Optional parameters use nullable types with null defaults.
-                bool isValueType = CimTypeMapper.IsValueType(inParam.CimType) && !inParam.IsArray;
-                string nullableType = isValueType ? $"{paramType}?" : paramType;
-                optionalParts.Add($"{nullableType} {ToCamelCase(inParam.Name)} = null");
-            }
-            else
-            {
-                requiredParts.Add($"{paramType} {ToCamelCase(inParam.Name)}");
-            }
-        }
-
-        foreach (var outParam in pureOutParams)
-        {
-            string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
-            requiredParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
-        }
-
-        // Required params first, then optional params (C# requires optional params at the end)
-        var paramParts = new List<string>();
-        paramParts.AddRange(requiredParts);
-        paramParts.AddRange(optionalParts);
-
-        string paramList = string.Join(", ", paramParts);
-
-        // Write doc comment
-        w.DocSummary(method.Description is not null
-            ? CodeWriter.EscapeXml(method.Description)
-            : $"Invokes the <c>{method.Name}</c> WMI method.");
-        foreach (var inParam in method.InParameters)
-        {
-            w.DocParam(ToCamelCase(inParam.Name), inParam.Description is not null ? CodeWriter.EscapeXml(inParam.Description) : null);
-        }
-
-        foreach (var outParam in pureOutParams)
-        {
-            w.DocParam(ToCamelCase(outParam.Name), outParam.Description is not null ? CodeWriter.EscapeXml(outParam.Description) : null);
-        }
-
-        if (!hasAutoJobWait && returnParam is not null)
-        {
-            w.DocReturns("The WMI method return value.");
-        }
-
-        // Method signature
-        if (method.IsStatic)
-        {
-            string staticParams = paramList.Length > 0
-                ? $"WmiConnection connection, {paramList}"
-                : "WmiConnection connection";
-            w.Line($"public static {returnType} {method.Name}({staticParams})");
-        }
-        else
-        {
-            w.Line($"public {returnType} {method.Name}({paramList})");
-        }
-
-        w.OpenBrace();
-
-        // Method body
-        if (method.IsStatic)
-        {
-            WriteStaticMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
-        }
-        else
-        {
-            WriteInstanceMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
-        }
-
-        w.CloseBrace();
-    }
-
     /// <summary>
     /// WmiLight SetPropertyValue only supports scalar types and string[].
     /// For non-string array parameters, generate a TODO comment.
@@ -686,44 +402,90 @@ public sealed class ClassGenerator
 
     /// <summary>
     /// Writes a line to read an output parameter from the WMI result.
-    /// For Reference/Reference[] types (which WmiLight may not support), wraps in try-catch.
+    /// For Reference types, uses non-generic GetPropertyValue with explicit cast.
+    /// For Object types (embedded WMI objects), constructs the typed wrapper or WmiObject
+    /// from the non-generic GetPropertyValue result.
     /// </summary>
     private static void WriteGetOutParameter(
         CodeWriter w,
         string paramName,
         string csharpType,
-        System.Management.CimType cimType)
+        System.Management.CimType cimType,
+        bool isArray,
+        string? wrapperClassName,
+        string connRef)
     {
         string camelName = ToCamelCase(paramName);
 
         if (cimType == System.Management.CimType.Reference)
         {
-            // WmiLight may not support Reference/Reference[] CimType
-            w.Line("try");
-            w.OpenBrace();
-            w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
-            w.CloseBrace();
-            w.Line("catch (System.NotSupportedException)");
-            w.OpenBrace();
-            w.Line($"{camelName} = default;");
-            w.CloseBrace();
+            // Use non-generic GetPropertyValue with cast for Reference/Reference[] types
+            w.Line($"{camelName} = ({csharpType})outResult.GetPropertyValue(\"{paramName}\");");
         }
         else if (cimType == System.Management.CimType.Object)
         {
-            // WMI may return a WbemClassObject for embedded object out params
-            // (e.g. MSFT_StorageExtendedStatus), which cannot be cast to string.
-            w.Line("try");
-            w.OpenBrace();
-            w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
-            w.CloseBrace();
-            w.Line("catch (System.InvalidCastException)");
-            w.OpenBrace();
-            w.Line($"{camelName} = default;");
-            w.CloseBrace();
+            WriteGetOutParameterObject(w, paramName, camelName, csharpType, isArray, wrapperClassName, connRef);
         }
         else
         {
             w.Line($"{camelName} = outResult.GetPropertyValue<{csharpType}>(\"{paramName}\");");
+        }
+    }
+
+    /// <summary>
+    /// Writes code to read a CimType.Object output parameter.
+    /// For known wrapper types, constructs the wrapper from the embedded WmiObject.
+    /// For unknown types, casts to WmiObject directly.
+    /// </summary>
+    private static void WriteGetOutParameterObject(
+        CodeWriter w,
+        string paramName,
+        string camelName,
+        string csharpType,
+        bool isArray,
+        string? wrapperClassName,
+        string connRef)
+    {
+        if (wrapperClassName is not null)
+        {
+            // Known wrapper type — construct from the embedded WmiObject
+            string rawVar = $"raw{paramName}";
+            w.OpenBrace();
+            w.Line($"var {rawVar} = outResult.GetPropertyValue(\"{paramName}\");");
+
+            if (isArray)
+            {
+                w.Line($"if ({rawVar} is WmiObject[] {camelName}Array)");
+                w.OpenBrace();
+                w.Line($"{camelName} = new {wrapperClassName}[{camelName}Array.Length];");
+                w.Line($"for (int i = 0; i < {camelName}Array.Length; i++)");
+                w.OpenBrace();
+                w.Line($"{camelName}[i] = new {wrapperClassName}({connRef}, {camelName}Array[i]);");
+                w.CloseBrace();
+                w.CloseBrace();
+                w.Line("else");
+                w.OpenBrace();
+                w.Line($"{camelName} = null;");
+                w.CloseBrace();
+            }
+            else
+            {
+                w.Line($"if ({rawVar} is WmiObject {camelName}Obj)");
+                w.OpenBrace();
+                w.Line($"{camelName} = new {wrapperClassName}({connRef}, {camelName}Obj);");
+                w.CloseBrace();
+                w.Line("else");
+                w.OpenBrace();
+                w.Line($"{camelName} = null;");
+                w.CloseBrace();
+            }
+
+            w.CloseBrace();
+        }
+        else
+        {
+            // Unknown embedded type — return as WmiObject
+            w.Line($"{camelName} = outResult.GetPropertyValue(\"{paramName}\") as {csharpType};");
         }
     }
 
@@ -758,6 +520,337 @@ public sealed class ClassGenerator
         }
 
         return char.ToLowerInvariant(name[0]) + name[1..];
+    }
+
+    private void WriteInstanceMethodBody(
+        CodeWriter w,
+        WmiMethodMetadata method,
+        WmiParameterMetadata? returnParam,
+        List<WmiParameterMetadata> outParams,
+        HashSet<string> inOutNames,
+        bool hasAutoJobWait,
+        bool defaultOptional)
+    {
+        bool hasInParams = method.InParameters.Count > 0;
+
+        w.Line($"using var wmiMethod = this.wmiObject.GetMethod(\"{method.Name}\");");
+
+        if (hasInParams)
+        {
+            w.Line("using var inParams = wmiMethod.CreateInParameters();");
+            foreach (var inParam in method.InParameters)
+            {
+                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
+                WriteSetParameter(w, "inParams", inParam, isOptional);
+            }
+
+            w.Line("this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);");
+        }
+        else
+        {
+            w.Line("this.wmiObject.ExecuteMethod(wmiMethod, out var outResult);");
+        }
+
+        w.Line("using (outResult)");
+        w.OpenBrace();
+
+        if (hasAutoJobWait)
+        {
+            // Read ReturnValue and Job first, then wait for job completion
+            string retType = CimTypeMapper.ToCSharpType(returnParam!.CimType, returnParam.IsArray);
+            w.Line($"{retType} returnValue = outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
+            w.Line("string jobPath = outResult.GetPropertyValue<string>(\"Job\");");
+            w.Line("WmiJobHelper.WaitForJob(this.connection, returnValue, jobPath);");
+        }
+
+        // Assign ref (in/out) parameters from output
+        foreach (var inParam in method.InParameters)
+        {
+            if (inOutNames.Contains(inParam.Name))
+            {
+                string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
+                WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType, inParam.IsArray, null, "this.connection");
+                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                {
+                    WriteAsyncRefFallback(w, inParam, "this.connection");
+                }
+            }
+        }
+
+        // Assign pure out parameters
+        foreach (var outParam in outParams)
+        {
+            string outType = this.ResolveOutputParamType(outParam);
+            string? wrapperClass = this.GetObjectWrapperClassName(outParam);
+            WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType, outParam.IsArray, wrapperClass, "this.connection");
+            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            {
+                WriteAsyncRefFallback(w, outParam, "this.connection");
+            }
+        }
+
+        if (!hasAutoJobWait && returnParam is not null)
+        {
+            string retType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
+            w.Line($"return outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
+        }
+
+        w.CloseBrace();
+    }
+
+    private void WriteStaticMethodBody(
+        CodeWriter w,
+        WmiMethodMetadata method,
+        WmiParameterMetadata? returnParam,
+        List<WmiParameterMetadata> outParams,
+        HashSet<string> inOutNames,
+        bool hasAutoJobWait,
+        bool defaultOptional)
+    {
+        bool hasInParams = method.InParameters.Count > 0;
+
+        w.Line("using var wmiClass = connection.GetClass(WmiClassName);");
+        w.Line($"using var wmiMethod = wmiClass.GetMethod(\"{method.Name}\");");
+
+        if (hasInParams)
+        {
+            w.Line("using var inParams = wmiMethod.CreateInParameters();");
+            foreach (var inParam in method.InParameters)
+            {
+                bool isOptional = IsEffectivelyOptional(inParam, defaultOptional) && !inOutNames.Contains(inParam.Name);
+                WriteSetParameter(w, "inParams", inParam, isOptional);
+            }
+
+            w.Line("connection.ExecuteMethod(wmiMethod, inParams, out var outResult);");
+        }
+        else
+        {
+            w.Line("connection.ExecuteMethod(wmiMethod, out var outResult);");
+        }
+
+        w.Line("using (outResult)");
+        w.OpenBrace();
+
+        if (hasAutoJobWait)
+        {
+            string retType = CimTypeMapper.ToCSharpType(returnParam!.CimType, returnParam.IsArray);
+            w.Line($"{retType} returnValue = outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
+            w.Line("string jobPath = outResult.GetPropertyValue<string>(\"Job\");");
+            w.Line("WmiJobHelper.WaitForJob(connection, returnValue, jobPath);");
+        }
+
+        // Assign ref (in/out) parameters from output
+        foreach (var inParam in method.InParameters)
+        {
+            if (inOutNames.Contains(inParam.Name))
+            {
+                string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
+                WriteGetOutParameter(w, inParam.Name, paramType, inParam.CimType, inParam.IsArray, null, "connection");
+                if (hasAutoJobWait && !inParam.IsArray && inParam.CimType == System.Management.CimType.Reference && inParam.ReferenceClassName is not null)
+                {
+                    WriteAsyncRefFallback(w, inParam, "connection");
+                }
+            }
+        }
+
+        foreach (var outParam in outParams)
+        {
+            string outType = this.ResolveOutputParamType(outParam);
+            string? wrapperClass = this.GetObjectWrapperClassName(outParam);
+            WriteGetOutParameter(w, outParam.Name, outType, outParam.CimType, outParam.IsArray, wrapperClass, "connection");
+            if (hasAutoJobWait && !outParam.IsArray && outParam.CimType == System.Management.CimType.Reference && outParam.ReferenceClassName is not null)
+            {
+                WriteAsyncRefFallback(w, outParam, "connection");
+            }
+        }
+
+        if (!hasAutoJobWait && returnParam is not null)
+        {
+            string retType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
+            w.Line($"return outResult.GetPropertyValue<{retType}>(\"ReturnValue\");");
+        }
+
+        w.CloseBrace();
+    }
+
+    private void WriteMethods(CodeWriter w, WmiClassMetadata classMeta, bool defaultOptional)
+    {
+        foreach (var method in classMeta.Methods)
+        {
+            w.BlankLine();
+            this.WriteMethod(w, method, defaultOptional);
+        }
+    }
+
+    private void WriteMethod(CodeWriter w, WmiMethodMetadata method, bool defaultOptional)
+    {
+        // Separate ReturnValue from other output params
+        var returnParam = method.OutParameters.FirstOrDefault(p =>
+            p.Name.Equals("ReturnValue", StringComparison.OrdinalIgnoreCase));
+        var outOnlyParams = method.OutParameters
+            .Where(p => !p.Name.Equals("ReturnValue", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Detect in/out parameters (appear in both InParameters and OutParameters)
+        var inOutNames = new HashSet<string>(
+            method.InParameters.Select(p => p.Name)
+                .Intersect(outOnlyParams.Select(p => p.Name), StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Detect auto-job-wait: method has an out param named "Job" of string/reference type
+        var jobParam = outOnlyParams.FirstOrDefault(p =>
+            p.Name.Equals("Job", StringComparison.OrdinalIgnoreCase)
+            && (p.CimType == System.Management.CimType.String || p.CimType == System.Management.CimType.Reference)
+            && !p.IsArray);
+        bool hasAutoJobWait = jobParam is not null && returnParam is not null;
+
+        // Pure out params are those not also in InParameters; exclude Job if auto-wait
+        var pureOutParams = outOnlyParams
+            .Where(p => !inOutNames.Contains(p.Name))
+            .Where(p => !hasAutoJobWait || !p.Name.Equals("Job", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // With auto-job-wait, return type becomes void (ReturnValue is consumed internally)
+        string returnType;
+        if (hasAutoJobWait)
+        {
+            returnType = "void";
+        }
+        else if (returnParam is not null)
+        {
+            returnType = CimTypeMapper.ToCSharpType(returnParam.CimType, returnParam.IsArray);
+        }
+        else
+        {
+            returnType = "void";
+        }
+
+        // Build parameter list
+        // ref (in-out) and out params go first (required), then optional params (with defaults).
+        var requiredParts = new List<string>();
+        var optionalParts = new List<string>();
+        foreach (var inParam in method.InParameters)
+        {
+            string paramType = CimTypeMapper.ToCSharpType(inParam.CimType, inParam.IsArray);
+            if (inOutNames.Contains(inParam.Name))
+            {
+                requiredParts.Add($"ref {paramType} {ToCamelCase(inParam.Name)}");
+            }
+            else if (IsEffectivelyOptional(inParam, defaultOptional))
+            {
+                // Optional parameters use nullable types with null defaults.
+                bool isValueType = CimTypeMapper.IsValueType(inParam.CimType) && !inParam.IsArray;
+                string nullableType = isValueType ? $"{paramType}?" : paramType;
+                optionalParts.Add($"{nullableType} {ToCamelCase(inParam.Name)} = null");
+            }
+            else
+            {
+                requiredParts.Add($"{paramType} {ToCamelCase(inParam.Name)}");
+            }
+        }
+
+        foreach (var outParam in pureOutParams)
+        {
+            string paramType = this.ResolveOutputParamType(outParam);
+            requiredParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
+        }
+
+        // Required params first, then optional params (C# requires optional params at the end)
+        var paramParts = new List<string>();
+        paramParts.AddRange(requiredParts);
+        paramParts.AddRange(optionalParts);
+
+        string paramList = string.Join(", ", paramParts);
+
+        // Write doc comment
+        w.DocSummary(method.Description is not null
+            ? CodeWriter.EscapeXml(method.Description)
+            : $"Invokes the <c>{method.Name}</c> WMI method.");
+        foreach (var inParam in method.InParameters)
+        {
+            w.DocParam(ToCamelCase(inParam.Name), inParam.Description is not null ? CodeWriter.EscapeXml(inParam.Description) : null);
+        }
+
+        foreach (var outParam in pureOutParams)
+        {
+            w.DocParam(ToCamelCase(outParam.Name), outParam.Description is not null ? CodeWriter.EscapeXml(outParam.Description) : null);
+        }
+
+        if (!hasAutoJobWait && returnParam is not null)
+        {
+            w.DocReturns("The WMI method return value.");
+        }
+
+        // Method signature
+        if (method.IsStatic)
+        {
+            string staticParams = paramList.Length > 0
+                ? $"WmiConnection connection, {paramList}"
+                : "WmiConnection connection";
+            w.Line($"public static {returnType} {method.Name}({staticParams})");
+        }
+        else
+        {
+            w.Line($"public {returnType} {method.Name}({paramList})");
+        }
+
+        w.OpenBrace();
+
+        // Method body
+        if (method.IsStatic)
+        {
+            this.WriteStaticMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
+        }
+        else
+        {
+            this.WriteInstanceMethodBody(w, method, returnParam, pureOutParams, inOutNames, hasAutoJobWait, defaultOptional);
+        }
+
+        w.CloseBrace();
+    }
+
+    /// <summary>
+    /// Resolves the C# type for an output parameter.
+    /// For CimType.Object with a known EmbeddedClassName that maps to a generated wrapper class,
+    /// returns the wrapper class name. Otherwise falls back to WmiObject or CimTypeMapper.
+    /// </summary>
+    private string ResolveOutputParamType(WmiParameterMetadata param)
+    {
+        if (param.CimType == System.Management.CimType.Object
+            && param.EmbeddedClassName is not null
+            && this.referenceClassMappings.TryGetValue(param.EmbeddedClassName, out string? wrapperClass))
+        {
+            return param.IsArray ? $"{wrapperClass}[]" : wrapperClass;
+        }
+
+        if (param.CimType == System.Management.CimType.Object)
+        {
+            if (param.EmbeddedClassName is not null
+                && this.warnedEmbeddedClassNames.Add(param.EmbeddedClassName))
+            {
+                Console.Error.WriteLine(
+                    $"  Warning: No wrapper class mapping for embedded class '{param.EmbeddedClassName}'. Falling back to WmiObject.");
+            }
+
+            return param.IsArray ? "WmiObject[]" : "WmiObject";
+        }
+
+        return CimTypeMapper.ToCSharpType(param.CimType, param.IsArray);
+    }
+
+    /// <summary>
+    /// Gets the wrapper class name for a CimType.Object parameter, or null if none.
+    /// </summary>
+    private string? GetObjectWrapperClassName(WmiParameterMetadata param)
+    {
+        if (param.CimType == System.Management.CimType.Object
+            && param.EmbeddedClassName is not null
+            && this.referenceClassMappings.TryGetValue(param.EmbeddedClassName, out string? wrapperClass))
+        {
+            return wrapperClass;
+        }
+
+        return null;
     }
 
     private void WriteBuilderClass(CodeWriter w, WmiClassMetadata classMeta)
@@ -924,7 +1017,7 @@ public sealed class ClassGenerator
                 continue;
             }
 
-            string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
+            string paramType = this.ResolveOutputParamType(outParam);
             typedRequiredParts.Add($"out {paramType} {ToCamelCase(outParam.Name)}");
         }
 
@@ -1008,7 +1101,7 @@ public sealed class ClassGenerator
             string camel = ToCamelCase(outParam.Name);
             if (typedOutParams.Any(p => p.Name == outParam.Name))
             {
-                string paramType = CimTypeMapper.ToCSharpType(outParam.CimType, outParam.IsArray);
+                string paramType = this.ResolveOutputParamType(outParam);
                 w.Line($"{paramType} {camel} = default;");
                 callParams.Add($"{camel}: out {camel}");
             }

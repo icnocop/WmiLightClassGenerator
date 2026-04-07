@@ -43,6 +43,13 @@ internal sealed class Program
             Console.WriteLine("Emitting infrastructure files...");
             InfrastructureEmitter.EmitAll(outputDir, config.Namespace, WriteFile);
 
+            // Auto-populate referenceClassMappings from the classes list so that
+            // EmbeddedInstance output params automatically resolve to wrapper types.
+            foreach (var classDef in config.Classes)
+            {
+                config.ReferenceClassMappings.TryAdd(classDef.WmiClassName, classDef.EffectiveClassName);
+            }
+
             var enumGen = new EnumGenerator(config.Namespace);
             var classGen = new ClassGenerator(
                 config.Namespace,
