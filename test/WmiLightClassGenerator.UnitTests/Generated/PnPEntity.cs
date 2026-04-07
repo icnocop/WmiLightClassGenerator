@@ -362,7 +362,7 @@ public sealed class PnPEntity : IDisposable
     /// Invokes the <c>GetDeviceProperties</c> WMI method.
     /// </summary>
     /// <returns>The WMI method return value.</returns>
-    public uint GetDeviceProperties(out string[] deviceProperties, string[] devicePropertyKeys = null)
+    public uint GetDeviceProperties(out WmiObject[] deviceProperties, string[] devicePropertyKeys = null)
     {
         using var wmiMethod = this.wmiObject.GetMethod("GetDeviceProperties");
         using var inParams = wmiMethod.CreateInParameters();
@@ -373,14 +373,7 @@ public sealed class PnPEntity : IDisposable
         this.wmiObject.ExecuteMethod(wmiMethod, inParams, out var outResult);
         using (outResult)
         {
-            try
-            {
-                deviceProperties = outResult.GetPropertyValue<string[]>("deviceProperties");
-            }
-            catch (System.InvalidCastException)
-            {
-                deviceProperties = default;
-            }
+            deviceProperties = outResult.GetPropertyValue("deviceProperties") as WmiObject[];
             return outResult.GetPropertyValue<uint>("ReturnValue");
         }
     }

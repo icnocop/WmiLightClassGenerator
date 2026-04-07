@@ -22,7 +22,7 @@ public class PnPEntityTests
         {
             using (entity)
             {
-                uint result = entity.GetDeviceProperties(out string[] deviceProperties);
+                uint result = entity.GetDeviceProperties(out WmiObject[] deviceProperties);
 
                 Assert.AreEqual(0u, result, "GetDeviceProperties should return 0 for success.");
 
@@ -46,7 +46,7 @@ public class PnPEntityTests
             using (entity)
             {
                 uint result = entity.GetDeviceProperties(
-                    out string[] deviceProperties,
+                    out WmiObject[] deviceProperties,
                     devicePropertyKeys: null);
 
                 Assert.AreEqual(0u, result, "GetDeviceProperties with null keys should return 0 for success.");
