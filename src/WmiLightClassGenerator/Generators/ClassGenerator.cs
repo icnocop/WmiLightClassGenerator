@@ -905,7 +905,12 @@ public sealed class ClassGenerator
         {
             w.Line($"this.builder.Set(\"{prop.Name}\", \"{cimTypeStr}\", {paramName}.ToWmiString());");
         }
-        else if (isEnum && !prop.IsArray)
+        else if (isEnum && prop.IsArray)
+        {
+            string elementWmiType = CimTypeMapper.ToCSharpType(prop.CimType);
+            w.Line($"this.builder.Set(\"{prop.Name}\", \"{cimTypeStr}\", Array.ConvertAll({paramName}, v => ({elementWmiType})v));");
+        }
+        else if (isEnum)
         {
             string wmiType = CimTypeMapper.ToCSharpType(prop.CimType);
             w.Line($"this.builder.Set(\"{prop.Name}\", \"{cimTypeStr}\", ({wmiType}){paramName});");
